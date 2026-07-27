@@ -97,6 +97,7 @@ The Temperature calculation formula when using T1 as an example being:
 Where units are in Kilo Ohm, Rt1 is the external thermistor resistance, Rref is the internal reference resistance and TEMP1 is the T1 register value which can be based on the resistance between the external thermistor resistance Rt1 and the temperature relationship to obtain true temperature value.
 
 When  operating in AFE mode  the cell voltage, pack current and temperature parameters are read by the microcontroller via TWI. Each AFE is paired with it's own MCU probably because the second AFE handles a much higher voltage which might be disastrous to an MCU. This is also a failsafe since in case of damage the main MCU will still be able to communicate any underlying issues. Recalling earlier,  a single AFE can handle upto 16 cells and upto 70V. To achieve 10 cells or around 42 V per AFE, all remaining pins are tied to main positive. 
+The MCU can access all parameters via the respective RAM register over the TWI Bus where the slave has a fixed address of 0x1A.
 
  ###  Cell Taps to SH367309U Circuit Diagram
 
@@ -107,7 +108,10 @@ When  operating in AFE mode  the cell voltage, pack current and temperature para
   <figcaption>Click the diagram to open it in a larger viewer .</figcaption>
 </figure>
 
- From the circuit diagram one can clearly see the whole electronic ecosystem surrounding the SH367309U AFE chip. The 82 ohm bleeding resistors are used to implement passive balancing while the RC network is used as a low pass filter for the SH367309U's internal ADC which captures cell voltages. Pins VC11-VC17 are tied together to enable a 10 cells in series configuration as outlined by the data sheet. VBAT+ is the main negative and connected to the psoitive terminal of the 10th cell while B0/B- is the main negative which is connected to the negative terminal of the 1st cell. The **MODE** pin of the AFE is pulled up to VBAT+ using a 1K resistor for AFE mode.
+ From the circuit diagram one can clearly see the whole electronic ecosystem surrounding the SH367309U AFE chip. The 82 ohm bleeding resistors are used to implement passive balancing while the RC network is used as a low pass filter for the SH367309U's internal ADC which captures cell voltages. Pins VC11-VC17 are tied together to enable a 10 cells in series configuration as outlined by the data sheet. 
+VBAT+ is the main negative and connected to the psoitive terminal of the 10th cell while B0/B- is the main negative which is connected to the negative terminal of the 1st cell. The **MODE** pin of the AFE is pulled up to VBAT+ using a 1K resistor for AFE mode which enables interfacing with the main microcontroller.
+There exists pads for interfacing with the MOSFET board which is separate from the logic board. Here, the charge and discharge pins from the mcu are interfaced in such a way as to control the charge and discharge mosfets which handle the large current during operation.
+The RS+ & RS- are then used as current sense pins for the AFE where they are connected to external shunt resistors to accurately measure current during operation.
 
 
 <h2 id="main-microcontroller">Main Microcontroller: HDSC HC32F030 K8TA</h2>
@@ -133,7 +137,7 @@ It is designed with flexible power managment system with a very fast wakeup time
  - Deep Sleep Mode
  - Sleep Mode
 
-It also includes an SWD interface for full-featured debugging via it's SWCLK(Pin 49), SWDIO (Pin 46), RESET(PIN 7), VCC(Pin 64, 32) & GND(Pin 63, 31) pins which have exposed pads on the logic board.  It operates on 3.3V logic which is supplied to the DVCC & AVCC pins of the MCU via an LDO namely the **PI-3V3-B4 Ultra-Tiny Power Converter** from **XUNZHI**.
+It also includes an SWD interface for full-featured debugging via it's SWCLK(Pin 49), SWDIO (Pin 46), RESET(PIN 7), VCC(Pin 64, 32) & GND(Pin 63, 31) pins which have exposed pads on the logic board.  It operates on 3.3V logic which is supplied to the DVCC & AVCC pins of the MCU via an LDO namely the **PI-3V3-B4 Ultra-Tiny Power Converter** from **Dongguan Xundi Electronics Co., Ltd**.
 The K8TA can be described as the main microcontroller where all outgoing communication is handled i.e CAN Bus, UART. There's a dedicated **UART port (VCC, RX, TX, GND)** on the logic board where **TX** is connected to **UART1_TXD (Pin 16)** and **RX** connected to **UART1_RXD (Pin 17)**. This  can then be interfaced with something like a **UART to BLE converter** for wireless parameter logging. 
 This configurations can as well occur over CAN Bus since the K8TA's SPI_0 pins are interfaced with a [CAN controller](#can-bus-interface) to enable communication via CAN Bus. 
 
@@ -146,8 +150,7 @@ This configurations can as well occur over CAN Bus since the K8TA's SPI_0 pins a
 
 It is paired to the first SH367309U AFE, which measures cells one through ten (1-10), via Two Wire Interface (TWI). The AFE therefore sends all its data to the MCU via TWI where SDA & SCL (Pins 27 & 26) from the SH367309U are connected to pins 5 & 6 of the MCU which represent I2C0_SDA & I2C0_SCL respectively. There are 0 ohm resistors on the TWI interface which act as a fuse incase of situations that may damage the MCU.
 The K8TA also acts as a master to the second microcontroller which is interfaced to it via UART using two optocouplers for isolation on the RXD and TXD lines.
-
-
+A pretty interesting observation is how the K8TA has been interfaced to control how power is supplied around the board. Here, an 8 pin DIP 4455 most likely P-channel Mosfet is used to switch power on & off to the converter. This means the K8TA can comfortably go into deep sleep automatically during inactivity and thus conserve battery pack power.
 
 <h2 id="second-microcontroller">2nd Microcontroller:  HDSC HC32F030 F8TA</h2>
 
@@ -169,11 +172,26 @@ There's a CAN Bus port on this VIP BMS logic board which  enables interfacing vi
   <figcaption>Click the diagram to open it in a larger viewer.</figcaption>
 </figure>
 
- The CAN controller chosen here was the **MCP2515** Stand-Alone CAN Controller with SPI Interface from Microchip Technology incorporated. It is an 18 pin PDIP that also requires an external crystal  and is capable of transmitting and receiving both standard and extended data and remote frames. The MCP2515 has two acceptance masks and six acceptance filters that are used to filter out unwanted messages, thereby reducing the host MCU’s overhead. The MCP2515 is interfaced with the HDSC HC32F030 K8TA via its SPI pins: Pin 20(SPI0_CS),Pin 21(SPI0_Clk), Pin 22(SPI0_MISO), Pin 23(SPI0_MOSI). 
+ The CAN controller chosen here was the **MCP2515** Stand-Alone CAN Controller with SPI Interface from Microchip Technology incorporated. It is an 18 pin PDIP that also requires an external crystal  and is capable of transmitting and receiving both standard and extended data and remote frames. The MCP2515 has two acceptance masks and six acceptance filters that are used to filter out unwanted messages, thereby reducing the host MCU’s overhead. The MCP2515 is interfaced with the HDSC HC32F030 K8TA via its SPI pins: Pin 20(SPI0_CS),Pin 21(SPI0_Clk), Pin 22(SPI0_MISO), Pin 23(SPI0_MOSI).
+
+  ![MCP2515 Pinout](bms-breakdownImages/MCP2515.png)
 
 The CAN transceiver selected here was the **TJA1042** high-speed CAN transceiver from NXP Semiconductors which provides an interface between the Controller Area Network (CAN) protocol controller(MCP2515) and the physical two-wire CAN bus. It has an 8-pin DIP package and includes features such as: High ESD handling capability on the bus pins (±8 kV), High voltage robustness on CAN pins (±58 V), Very low-current Standby mode with host and bus wake-up capability.
 
+![TJA1042T Pinout](bms-breakdownImages/TJA1042T.png)
+![TJA1042_Pinout Definitions](bms-breakdownImages/TJA_PINOUT.png)
+
 The galvanic isolator chosen was the **ADuM1201 dual-channel digital isolators** from Analog devices that incorporate the iCoupler technology which combines high speed CMOS and monolithic transformer technologies to provide outstanding performance characteristics that are superior to other alternatives such as the commoonly used optocouplers. 
 The ADuM  1201 isolator provides two independent  isolation channels in a variety of channel configuarations and data rates  with low pulse width distortion.
+![ADuM 1201 galvanic isolator](bms-breakdownImages/ADuM1201.png)
 
+As mentioned earlier there are several implementations of isolation within the CAN Bus communication interface. For starters, the 1201 ADuM dual-channel digital isolator offers galvanic isolation between MCP2515 and TJA1042. Where the MCP2515 sits on the primary side while TJA1042T sits on the secondary side of the isolator. Power is supplied to the secondary side of the isolator and hence the transceiver via a common mode choke which in essence provides electromagnetic isolation abd hence blocks unwanted high frequency noise.
 
+### What do you think this does exactly??
+Within the CAN Bus interface there's a pretty interesting circuit whose role can't seem to be pinned yet. It involves the TJA1042 CAN Bus transceiver, a 2N7002K N-channel MOSFET in an SOT-23 package, an optocoupler and a few resistors.
+
+![CAN_BUS_Detect](bms-breakdownImages/CAN_BUS_Detect.png)
+
+ The **CAN High** pin from the transceiver is connected to the **Drain** of the transistor, The **Source** pin of the transistor is connected to the **Anode** pin of the optocoupler with two SMD resistors forming a voltage divider bias circuit between the gate and source of the transistor ,**CAN Low** pin of the transceiver to the **Cathode** pin of the optocoupler via a 680 ohm resistor, **Pin 44 from the HC32F030 K8TA** is connected to the **Collector** pin of the optocoupler via a 100K resistor while the emitter pin of the optocoupler is connected to ground.
+
+My first thought on this was that it was probably a wake up over CAN Bus circuit for the K8TA since it is programmed to go into ultra low power mode by default and therefore needs to be awoken. However, that was quickly debunked and the second thought was that it was a way to tell if the transceiver became faulty since the microcontroller can sense dominant state whenever pin 44 is pulled low and therefore would output a faulty transceiver error if it didn't receive any communication over CAN Bus. This is just but a theoretical overview and thus a more detailed explanation can be given once more advanced tests are done.
